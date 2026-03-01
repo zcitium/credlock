@@ -67,9 +67,9 @@ class MainApplication(ctk.CTk):
             widget.destroy()
         self.unbind("<Return>")
 
-    def heading(self, text, color=ACCENT_CYAN):
+    def heading(self, text, color=ACCENT_CYAN, master=None):
         return ctk.CTkLabel(
-            self.container, 
+            master if master else self.container, 
             text=text, 
             text_color=color, 
             font=ctk.CTkFont(family=FONT_FAMILY, size=28, weight="bold")
@@ -83,8 +83,8 @@ class MainApplication(ctk.CTk):
         self.title_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         self.title_frame.pack(pady=(40, 5))
         
-        self.title_label = self.heading("", ACCENT_CYAN)
-        self.title_label.pack(in_=self.title_frame)
+        self.title_label = self.heading("", ACCENT_CYAN, master=self.title_frame)
+        self.title_label.pack()
         
         self.subtitle_label = ctk.CTkLabel(self.container, text="", text_color=ACCENT_PINK, font=(FONT_FAMILY, 14, "bold"))
         self.subtitle_label.pack(pady=(0, 20))
@@ -215,36 +215,61 @@ class MainApplication(ctk.CTk):
         self.rec_a_entry.pack(pady=10)
         self.rec_a_entry.focus()
         
-        ctk.CTkLabel(self.container, text="New Passwords:", text_color=TEXT_COLOR, font=(FONT_FAMILY, 14)).pack(pady=(20, 0))
-        self.new_pw1_entry = ctk.CTkEntry(self.container, placeholder_text="New Password 1", show="*", width=300, fg_color=FRAME_COLOR, text_color=TEXT_COLOR, border_color=ACCENT_CYAN)
-        self.new_pw1_entry.pack(pady=5)
-        self.new_pw2_entry = ctk.CTkEntry(self.container, placeholder_text="New Password 2", show="*", width=300, fg_color=FRAME_COLOR, text_color=TEXT_COLOR, border_color=ACCENT_CYAN)
-        self.new_pw2_entry.pack(pady=5)
-        
         def on_enter(event=None):
-            self.do_recovery()
+            self.verify_recovery_answer()
             
         self.bind("<Return>", on_enter)
         
-        NeonButton(self.container, text="RESET PASSWORDS", command=self.do_recovery, is_danger=True, width=200).pack(pady=20)
+        NeonButton(self.container, text="VERIFY ANSWER", command=self.verify_recovery_answer, width=200).pack(pady=20)
         OutlineButton(self.container, text="CANCEL", command=lambda: self.show_login_screen(self.user_id, self.username), width=200).pack()
 
-    def do_recovery(self):
+    def verify_recovery_answer(self):
         ans = self.rec_a_entry.get()
-        np1 = self.new_pw1_entry.get()
-        np2 = self.new_pw2_entry.get()
-        
-        if not ans or not np1 or not np2:
-            messagebox.showerror("Error", "All sequence parameters required!")
+        if not ans:
+            messagebox.showerror("Error", "Recovery answer required!")
             return
             
         key = crypto.unlock_vault_recovery(self.user_id, ans)
         if key:
-            crypto.reset_main_passwords(self.user_id, key, np1, np2)
-            messagebox.showinfo("Success", "Security clearance updated! You may now enter the vault.")
-            self.show_login_screen(self.user_id, self.username)
+            self.master_key = key
+            self.show_new_passwords_screen()
         else:
-            messagebox.showerror("Error", "Incorrect override sequence (answer)!")
+            messagebox.showerror("Error", "Incorrect recovery answer!")
+
+    def show_new_passwords_screen(self):
+        self.clear_container()
+        
+        self.heading("SET NEW PASSWORDS", ACCENT_CYAN).pack(pady=(40, 20))
+        
+        ctk.CTkLabel(self.container, text="Security Clearance Verified. Enter New Keys:", text_color=TEXT_COLOR, font=(FONT_FAMILY, 14)).pack(pady=(20, 10))
+        
+        self.new_pw1_entry = ctk.CTkEntry(self.container, placeholder_text="New Password 1", show="*", width=300, fg_color=FRAME_COLOR, text_color=TEXT_COLOR, border_color=ACCENT_CYAN)
+        self.new_pw1_entry.pack(pady=5)
+        self.new_pw1_entry.focus()
+        
+        self.new_pw2_entry = ctk.CTkEntry(self.container, placeholder_text="New Password 2", show="*", width=300, fg_color=FRAME_COLOR, text_color=TEXT_COLOR, border_color=ACCENT_CYAN)
+        self.new_pw2_entry.pack(pady=5)
+        
+        def on_enter(event=None):
+            self.do_password_reset()
+            
+        self.bind("<Return>", on_enter)
+        
+        NeonButton(self.container, text="CONFIRM RESET", command=self.do_password_reset, is_danger=True, width=200).pack(pady=20)
+        OutlineButton(self.container, text="CANCEL", command=lambda: self.show_login_screen(self.user_id, self.username), width=200).pack()
+
+    def do_password_reset(self):
+        np1 = self.new_pw1_entry.get()
+        np2 = self.new_pw2_entry.get()
+        
+        if not np1 or not np2:
+            messagebox.showerror("Error", "Both new passwords are required!")
+            return
+            
+        crypto.reset_main_passwords(self.user_id, self.master_key, np1, np2)
+        messagebox.showinfo("Success", "Security clearance updated! You may now enter the vault.")
+        self.master_key = None
+        self.show_login_screen(self.user_id, self.username)
 
     def show_vault_screen(self):
         self.clear_container()
@@ -252,7 +277,7 @@ class MainApplication(ctk.CTk):
         top_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         top_frame.pack(fill="x", pady=(0, 10))
         
-        self.heading(f"CREDLOCK: {self.username.upper()}", ACCENT_CYAN).pack(side="left")
+        self.heading(f"CREDLOCK: {self.username.upper()}", ACCENT_CYAN, master=top_frame).pack(side="left")
         
         NeonButton(top_frame, text="+ ADD NODE", command=self.show_add_credential, width=120).pack(side="right", padx=(10, 0))
         OutlineButton(top_frame, text="LOGOUT", command=self.show_startup_screen, width=80).pack(side="right")
@@ -278,11 +303,11 @@ class MainApplication(ctk.CTk):
             row = ctk.CTkFrame(self.vault_scroll, fg_color=BG_COLOR, corner_radius=6, border_width=1, border_color=ACCENT_CYAN)
             row.pack(fill="x", pady=5, padx=5)
             
-            ctk.CTkLabel(row, text=service.upper(), width=150, anchor="w", font=(FONT_FAMILY, 14, "bold"), text_color=ACCENT_CYAN).pack(side="left", padx=10, pady=10)
-            ctk.CTkLabel(row, text=username, width=150, anchor="w", text_color=TEXT_COLOR).pack(side="left", padx=10)
+            ctk.CTkLabel(row, text=service.upper(), width=130, anchor="w", font=(FONT_FAMILY, 14, "bold"), text_color=ACCENT_CYAN).pack(side="left", padx=(10, 5), pady=10)
+            ctk.CTkLabel(row, text=username, width=130, anchor="w", text_color=TEXT_COLOR).pack(side="left", padx=5)
             
             del_n = OutlineButton(row, text="DEL", is_danger=True, width=50, command=lambda i=cid: self.delete_credential(i))
-            del_n.pack(side="right", padx=10)
+            del_n.pack(side="right", padx=(5, 10))
             
             edit_n = OutlineButton(row, text="EDIT", width=50, command=lambda i=cid, s=service, u=username, p=enc_pw: self.show_edit_credential(i, s, u, p))
             edit_n.pack(side="right", padx=5)
